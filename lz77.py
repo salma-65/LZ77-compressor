@@ -196,6 +196,27 @@ def write_decompressed_file(filename, data):
     with open(filename, "wb") as file:
         file.write(data)
 
+#============================================================
+# 10. Show statistics
+#===========================================================
+
+def show_statistics(original_data, tags, position_bits, length_bits):
+
+    # Original size in bits
+    original_size = len(original_data) * 8
+
+    # Each tag contains:
+    # Position bits + Length bits + Symbol bits
+    tag_size = position_bits + length_bits + 8
+
+    # Total compressed size
+    compressed_size = len(tags) * tag_size
+
+    print("\n========== Compression Statistics ==========")
+    print(f"Original size   : {original_size} bits")
+    print(f"Compressed size : {compressed_size} bits")
+    print(f"Tag size        : {tag_size} bits")
+
 
 # ============================================================
 # 9. Main
@@ -233,6 +254,8 @@ def main():
     print(f"Number of tags: {len(tags)}")
     print(f"Position bits: {position_bits}")
     print(f"Length bits: {length_bits}")
+
+    show_statistics(data, tags, position_bits, length_bits)
 
     if data == decompressed_data:
         print("Verification: SUCCESS")
