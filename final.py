@@ -90,33 +90,61 @@ LOOKAHEAD_SIZE = 16
 # 2. Find the longest match
 # ============================================================
 
+def overlap_match(data, candidate, pos, lookahead_size):
+
+    distance = pos - candidate
+
+    limit = min(
+        len(data) - pos,
+        lookahead_size
+    )
+
+    length = 0
+
+    while length < limit:
+
+        if length >= distance:
+            source = candidate + (length % distance)
+        else:
+            source = candidate + length
+
+        if data[source] != data[pos + length]:
+            break
+
+        length += 1
+
+    return length
+
+
 def find_longest_match(data, pos, search_size, lookahead_size):
 
     best_offset = 0
     best_length = 0
 
-    start = max(0, pos - search_size)
-
-    max_length = min(
-        lookahead_size,
-        len(data) - pos
+    start = max(
+        0,
+        pos - search_size
     )
 
     for i in range(start, pos):
 
-        length = 0
-
-        while (
-            length < max_length
-            and i + length < len(data)
-            and data[i + length] == data[pos + length]
-        ):
-            length += 1
+        length = overlap_match(
+            data,
+            i,
+            pos,
+            lookahead_size
+        )
 
         if length > best_length:
 
             best_offset = pos - i
             best_length = length
+
+            if (
+                best_length == lookahead_size
+                or pos + best_length == len(data)
+            ):
+                break
 
     return best_offset, best_length
 
@@ -196,6 +224,7 @@ def from_binary(binary):
 def convert_to_binary(tuples):
 
     # Find maximum offset and maximum length
+
     max_offset = max(
         (tag[0] for tag in tuples),
         default=0
@@ -207,6 +236,7 @@ def convert_to_binary(tuples):
     )
 
     # Calculate required number of bits
+
     position_bits = max(
         1,
         max_offset.bit_length()
@@ -222,18 +252,21 @@ def convert_to_binary(tuples):
     for offset, length, next_symbol in tuples:
 
         # Convert offset to binary
+
         offset_binary = to_binary(
             offset,
             position_bits
         )
 
         # Convert length to binary
+
         length_binary = to_binary(
             length,
             length_bits
         )
 
         # Convert symbol to 8-bit binary
+
         if next_symbol is None:
 
             symbol_binary = "00000000"
@@ -246,6 +279,7 @@ def convert_to_binary(tuples):
             )
 
         # Combine the three fields
+
         binary_tag = (
             offset_binary
             + length_binary
@@ -273,6 +307,7 @@ def validate_binary_tags(tags):
             raise ValueError("Empty tag found")
 
         if any(bit not in "01" for bit in tag):
+
             raise ValueError(
                 "Invalid binary tags."
             )
@@ -306,6 +341,7 @@ def write_compressed_file(
             offset, length, next_symbol = tag
 
             # Convert symbol to readable form
+
             if next_symbol is None:
 
                 symbol_text = "NULL"
@@ -315,6 +351,7 @@ def write_compressed_file(
                 symbol_text = next_symbol
 
             # Normal LZ77 tag
+
             normal_tag = (
                 f"<{offset}, {length}, {symbol_text}>"
             )
@@ -336,6 +373,7 @@ def write_compressed_file(
             ]
 
             # Write normal tag + binary representation
+
             file.write(
                 f"{normal_tag:<18} "
                 f"{position_binary} "
@@ -381,6 +419,7 @@ def read_binary_tags(
             parts = line.split()
 
             if len(parts) < 4:
+
                 raise ValueError(
                     "Invalid compressed file format."
                 )
@@ -396,6 +435,7 @@ def read_binary_tags(
             )
 
             if len(binary_tag) != tag_size:
+
                 raise ValueError(
                     "Invalid binary tag size."
                 )
@@ -428,22 +468,26 @@ def convert_binary_to_tuples(
     for tag in binary_tags:
 
         if len(tag) != tag_size:
+
             raise ValueError(
                 "Invalid tag size."
             )
 
         # Read offset
+
         offset_binary = tag[
             :position_bits
         ]
 
         # Read length
+
         length_binary = tag[
             position_bits:
             position_bits + length_bits
         ]
 
         # Read symbol
+
         symbol_binary = tag[
             position_bits + length_bits:
         ]
@@ -492,6 +536,7 @@ def decode(tuples):
     for offset, length, next_symbol in tuples:
 
         # Copy matched characters
+
         if offset > 0 and length > 0:
 
             start = len(output) - offset
@@ -506,6 +551,7 @@ def decode(tuples):
                 )
 
         # Add next symbol
+
         if next_symbol is not None:
 
             output.append(
@@ -531,6 +577,7 @@ def decompress(
     )
 
     # Decode tuples
+
     return decode(tuples)
 
 
@@ -561,6 +608,7 @@ def show_statistics(
 ):
 
     # Original size in bits
+
     original_size = len(
         original_data
     ) * 8
@@ -575,6 +623,7 @@ def show_statistics(
     )
 
     # Total compressed size
+
     compressed_size = (
         len(tuples)
         * tag_size
@@ -649,6 +698,14 @@ def main():
         length_bits
     ) = convert_to_binary(
         tuples
+    )
+
+    # --------------------------------------------------------
+    # Validate binary tags
+    # --------------------------------------------------------
+
+    validate_binary_tags(
+        binary_tags
     )
 
     # --------------------------------------------------------
