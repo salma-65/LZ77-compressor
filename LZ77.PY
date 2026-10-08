@@ -1,118 +1,58 @@
 # ============================================================
-# LZ77 Data Compression
-# Supports:
-# 1. Compression
-# 2. Decompression
-# 3. Binary Tags
-# 4. Overlapping Matches
-# 5. Text Files
+# LZ77 Data Compression  (single file, with menu)
+#   1. Compression      file1.txt -> file2.txt  (tags as 0/1)
+#   2. Decompression    file2.txt -> file3.txt
+#   3. Binary tags
+#   4. Overlapping matches
+#   5. Handles repetitive sequences  (e.g. <1,10,"A"> for BBBBBBBBBB)
 # ============================================================
 
-
-# ------------------------------------------------------------
-# Configuration
-# ------------------------------------------------------------
-
-WINDOW_SIZE = 32
-LOOKAHEAD_SIZE = 16
+WINDOW_SIZE = 32        # search window  (max position)
+LOOKAHEAD_SIZE = 16     # look-ahead     (max match length)
 
 INPUT_FILE = "file1.txt"
 COMPRESSED_FILE = "file2.txt"
 DECOMPRESSED_FILE = "file3.txt"
 
+SYMBOL_BITS = 8
+
 
 # ------------------------------------------------------------
-# Helper Functions
+# Helpers
 # ------------------------------------------------------------
-
 def int_to_binary(number, bits):
-    """
-    Convert an integer to a fixed-size binary string.
-    Example:
-        int_to_binary(5, 4) -> '0101'
-    """
+    """int_to_binary(5, 4) -> '0101'"""
     return format(number, f"0{bits}b")
 
 
 def binary_to_int(binary):
-    """
-    Convert binary string to integer.
-    """
     return int(binary, 2)
 
 
-def get_position_bits():
-    """
-    Number of bits needed to represent positions
-    inside the sliding window.
-    """
-    return max(1, (WINDOW_SIZE).bit_length())
-
-
-def get_length_bits():
-    """
-    Number of bits needed to represent match lengths.
-    """
-    return max(1, (LOOKAHEAD_SIZE).bit_length())
-
-
 # ------------------------------------------------------------
-# Find Longest Match
+# Find longest match  (supports OVERLAPPING matches)
 # ------------------------------------------------------------
-
-def find_longest_match(data, current_position):
+def find_longest_match(data, current):
     """
-    Find the longest match between the lookahead buffer
-    and the search buffer.
-
-    This function supports OVERLAPPING matches.
-
-    Returns:
-        (position, length)
+    Returns (position, length).
+    position = how many steps to go back from `current` (0 = no match).
+    The match is allowed to run past `current` (overlap), because we
+    compare data[search + k] with data[current + k] without stopping at `current`.
+    On a tie the NEAREST match wins (smallest position), like the slides.
     """
+    start = max(0, current - WINDOW_SIZE)
+    limit = min(LOOKAHEAD_SIZE, len(data) - current)
 
-    start = max(0, current_position - WINDOW_SIZE)
+    best_position, best_length = 0, 0
 
-    end = min(
-        len(data),
-        current_position + LOOKAHEAD_SIZE
-    )
-
-    best_position = 0
-    best_length = 0
-
-    # Search inside the sliding window
-    for search_position in range(start, current_position):
-
+    for search in range(start, current):          # oldest -> nearest
         length = 0
-
-        # Try to extend the match
-        while (
-            length < LOOKAHEAD_SIZE
-            and current_position + length < len(data)
-        ):
-
-            # ------------------------------------------------
-            # IMPORTANT:
-            # We intentionally allow the source position
-            # to move into the part being generated.
-            #
-            # This is what allows OVERLAPPING matches.
-            # ------------------------------------------------
-
-            source_position = search_position + length
-
-            if source_position >= len(data):
-                break
-
-            if data[source_position] != data[current_position + length]:
-                break
-
+        while length < limit and data[search + length] == data[current + length]:
             length += 1
 
-        if length > best_length:
+        if length > 0 and length >= best_length:  # >= : nearest wins on ties
             best_length = length
-            best_position = current_position - search_position
+            best_position = current - search
 
     return best_position, best_length
 
@@ -120,493 +60,210 @@ def find_longest_match(data, current_position):
 # ------------------------------------------------------------
 # Compression
 # ------------------------------------------------------------
-
-def compress_text(text):
+def compress_data(data):
     """
-    Compress text using LZ77.
-
-    Each tag has the form:
-
-        <Position, Length, Next Symbol>
-
-    Position  -> binary
-    Length    -> binary
-    Symbol    -> 8-bit binary
+    bytes -> list of tags (position, length, next_symbol)
+    next_symbol is None (NULL) only if the match reaches the end of the data.
     """
-
-    data = text.encode("utf-8")
-
-    position_bits = get_position_bits()
-    length_bits = get_length_bits()
-
     tags = []
+    current = 0
 
-    current_position = 0
+    while current < len(data):
+        position, length = find_longest_match(data, current)
+        next_index = current + length
 
-    while current_position < len(data):
-
-        position, length = find_longest_match(
-            data,
-            current_position
-        )
-
-        # ----------------------------------------------------
-        # If no match was found
-        # ----------------------------------------------------
-
-        if length == 0:
-
-            position = 0
-            length = 0
-
-            next_symbol = data[current_position]
-
-            current_position += 1
-
-        # ----------------------------------------------------
-        # Match was found
-        # ----------------------------------------------------
-
+        if next_index < len(data):
+            tags.append((position, length, data[next_index]))
+            current = next_index + 1
         else:
-
-            next_position = current_position + length
-
-            # If the match reaches the end of the file,
-            # there is no next symbol.
-            if next_position < len(data):
-                next_symbol = data[next_position]
-                current_position = next_position + 1
-
-            else:
-                # We need a special value for "no next symbol".
-                next_symbol = None
-                current_position = next_position
-
-        # ----------------------------------------------------
-        # Convert tag to Binary
-        # ----------------------------------------------------
-
-        position_binary = int_to_binary(
-            position,
-            position_bits
-        )
-
-        length_binary = int_to_binary(
-            length,
-            length_bits
-        )
-
-        if next_symbol is None:
-
-            symbol_binary = "00000000"
-
-            has_symbol = "0"
-
-        else:
-
-            symbol_binary = int_to_binary(
-                next_symbol,
-                8
-            )
-
-            has_symbol = "1"
-
-        # ----------------------------------------------------
-        # Complete Binary Tag
-        #
-        # Format:
-        #
-        # [has_symbol][position][length][symbol]
-        # ----------------------------------------------------
-
-        binary_tag = (
-            has_symbol
-            + position_binary
-            + length_binary
-            + symbol_binary
-        )
-
-        tags.append(binary_tag)
+            tags.append((position, length, None))   # NULL
+            current = next_index
 
     return tags
 
 
-# ------------------------------------------------------------
-# Save Binary Tags
-# ------------------------------------------------------------
-
-def save_compressed_file(tags, filename):
+def tags_to_binary(tags):
     """
-    Save all LZ77 tags as binary strings in file2.txt.
+    Returns (header, [binary tag strings], position_bits, length_bits).
 
-    Metadata is stored at the beginning so that the
-    decompressor knows the field sizes.
+    Field widths are taken from the MAX values really used
+    (same as the slides: Max Position, Max Length, 8 bits symbol).
+    Tag    = [position][length][symbol 8 bits]
+    Header = [position_bits: 8][length_bits: 8][last_tag_has_symbol: 1]
     """
+    max_position = max((t[0] for t in tags), default=0)
+    max_length = max((t[1] for t in tags), default=0)
 
-    position_bits = get_position_bits()
-    length_bits = get_length_bits()
+    position_bits = max(1, max_position.bit_length())
+    length_bits = max(1, max_length.bit_length())
 
-    with open(filename, "w", encoding="utf-8") as file:
+    last_has_symbol = "0" if (tags and tags[-1][2] is None) else "1"
 
-        # Header
-        file.write("LZ77\n")
-        file.write(f"POSITION_BITS={position_bits}\n")
-        file.write(f"LENGTH_BITS={length_bits}\n")
+    header = (int_to_binary(position_bits, 8)
+              + int_to_binary(length_bits, 8)
+              + last_has_symbol)
 
-        file.write("TAGS\n")
+    binary_tags = []
+    for position, length, symbol in tags:
+        symbol_value = 0 if symbol is None else symbol
+        binary_tags.append(
+            int_to_binary(position, position_bits)
+            + int_to_binary(length, length_bits)
+            + int_to_binary(symbol_value, SYMBOL_BITS)
+        )
 
-        # Write every tag
-        for tag in tags:
-            file.write(tag + "\n")
+    return header, binary_tags, position_bits, length_bits
 
 
-# ------------------------------------------------------------
-# Read Binary Tags
-# ------------------------------------------------------------
+def compress_file(input_filename, output_filename):
+    with open(input_filename, "rb") as f:         # bytes: no newline conversion
+        data = f.read()
 
-def read_compressed_file(filename):
-    """
-    Read binary tags from file2.txt.
-    """
+    tags = compress_data(data)
+    header, binary_tags, pos_bits, len_bits = tags_to_binary(tags)
 
-    with open(filename, "r", encoding="utf-8") as file:
+    # file2.txt contains ONLY 0 and 1 (header line, then one tag per line)
+    with open(output_filename, "w", encoding="ascii") as f:
+        f.write(header + "\n")
+        for tag in binary_tags:
+            f.write(tag + "\n")
 
-        lines = file.read().splitlines()
+    # ---- statistics (same idea as the slides) ----
+    tag_size = pos_bits + len_bits + SYMBOL_BITS
+    original_size = len(data) * 8
+    tags_size = len(tags) * tag_size
+    total_size = tags_size + len(header)
 
-    # Validate header
-    if lines[0] != "LZ77":
-        raise ValueError("Invalid LZ77 compressed file.")
-
-    position_bits = int(
-        lines[1].split("=")[1]
-    )
-
-    length_bits = int(
-        lines[2].split("=")[1]
-    )
-
-    tags_start = lines.index("TAGS") + 1
-
-    tags = lines[tags_start:]
-
-    return tags, position_bits, length_bits
+    print(f"Number of tags    : {len(tags)}")
+    print(f"Tag size          : {pos_bits} + {len_bits} + {SYMBOL_BITS} = {tag_size} bits")
+    print(f"Original size     : {original_size} bits")
+    print(f"Compressed size   : {tags_size} bits  (tags only)")
+    print(f"                    {total_size} bits  (with {len(header)}-bit header)")
+    if tags_size:
+        print(f"Compression ratio : {original_size / tags_size:.3f}  (tags only)")
+    return tags
 
 
 # ------------------------------------------------------------
 # Decompression
 # ------------------------------------------------------------
+def read_compressed_file(filename):
+    with open(filename, "r", encoding="ascii") as f:
+        bits = "".join(f.read().split())          # ignore newlines / spaces
 
-def decompress_tags(tags, position_bits, length_bits):
+    if not bits or set(bits) - {"0", "1"}:
+        raise ValueError("Invalid compressed file (must contain only 0 and 1).")
+
+    position_bits = binary_to_int(bits[0:8])
+    length_bits = binary_to_int(bits[8:16])
+    last_has_symbol = bits[16] == "1"
+    body = bits[17:]
+
+    tag_size = position_bits + length_bits + SYMBOL_BITS
+    tags = []
+    for i in range(0, len(body) - tag_size + 1, tag_size):
+        tag = body[i:i + tag_size]
+        position = binary_to_int(tag[:position_bits])
+        length = binary_to_int(tag[position_bits:position_bits + length_bits])
+        symbol = binary_to_int(tag[position_bits + length_bits:])
+        tags.append((position, length, symbol))
+
+    return tags, last_has_symbol
+
+
+def decompress_tags(tags, last_has_symbol=True):
     """
-    Decompress LZ77 binary tags.
-
-    The important part here is the copying loop.
-
-    It copies ONE BYTE AT A TIME.
-
-    This automatically handles overlapping matches.
+    Copies ONE BYTE AT A TIME, so a match may read bytes that were
+    just appended (overlap).  e.g. <1,10,"A"> repeats the last byte 10 times.
     """
-
     output = bytearray()
 
-    for tag in tags:
-
-        index = 0
-
-        # ----------------------------------------------------
-        # Read has_symbol flag
-        # ----------------------------------------------------
-
-        has_symbol = tag[index]
-
-        index += 1
-
-        # ----------------------------------------------------
-        # Read Position
-        # ----------------------------------------------------
-
-        position_binary = tag[
-            index:
-            index + position_bits
-        ]
-
-        index += position_bits
-
-        position = binary_to_int(
-            position_binary
-        )
-
-        # ----------------------------------------------------
-        # Read Length
-        # ----------------------------------------------------
-
-        length_binary = tag[
-            index:
-            index + length_bits
-        ]
-
-        index += length_bits
-
-        length = binary_to_int(
-            length_binary
-        )
-
-        # ----------------------------------------------------
-        # Read Next Symbol
-        # ----------------------------------------------------
-
-        symbol_binary = tag[index:index + 8]
-
-        next_symbol = binary_to_int(
-            symbol_binary
-        )
-
-        # ----------------------------------------------------
-        # Copy matched data
-        #
-        # IMPORTANT:
-        #
-        # Do NOT copy the whole substring at once.
-        #
-        # Copy one byte at a time.
-        #
-        # This supports overlapping matches.
-        # ----------------------------------------------------
-
+    for index, (position, length, symbol) in enumerate(tags):
         if position > 0 and length > 0:
-
             start = len(output) - position
-
             for i in range(length):
+                output.append(output[start + i])
 
-                # ------------------------------------------------
-                # The source can be a byte that we just appended.
-                #
-                # This is the overlapping behavior.
-                # ------------------------------------------------
-
-                output.append(
-                    output[start + i]
-                )
-
-        # ----------------------------------------------------
-        # Add next symbol
-        # ----------------------------------------------------
-
-        if has_symbol == "1":
-            output.append(next_symbol)
+        is_last = index == len(tags) - 1
+        if not (is_last and not last_has_symbol):   # NULL symbol -> nothing to add
+            output.append(symbol)
 
     return bytes(output)
 
 
-# ------------------------------------------------------------
-# Decompression to File
-# ------------------------------------------------------------
-
 def decompress_file(compressed_filename, output_filename):
-    """
-    Read file2.txt, decompress it,
-    and write the original data to file3.txt.
-    """
+    tags, last_has_symbol = read_compressed_file(compressed_filename)
+    data = decompress_tags(tags, last_has_symbol)
+    with open(output_filename, "wb") as f:
+        f.write(data)
+    print(f"Number of tags    : {len(tags)}")
+    print(f"Decompressed size : {len(data)} bytes")
 
-    tags, position_bits, length_bits = read_compressed_file(
-        compressed_filename
-    )
-
-    decompressed_data = decompress_tags(
-        tags,
-        position_bits,
-        length_bits
-    )
-
-    with open(
-        output_filename,
-        "wb"
-    ) as file:
-
-        file.write(decompressed_data)
-
-
-# ------------------------------------------------------------
-# Compress File
-# ------------------------------------------------------------
-
-def compress_file(input_filename, output_filename):
-    """
-    Read file1.txt and create file2.txt.
-    """
-
-    with open(
-        input_filename,
-        "r",
-        encoding="utf-8"
-    ) as file:
-
-        text = file.read()
-
-    tags = compress_text(text)
-
-    save_compressed_file(
-        tags,
-        output_filename
-    )
-
-
-# ------------------------------------------------------------
-# Verify Decompression
-# ------------------------------------------------------------
 
 def verify_files(original_filename, decompressed_filename):
-    """
-    Check whether decompression produced
-    exactly the original file.
-    """
-
-    with open(
-        original_filename,
-        "rb"
-    ) as original:
-
-        original_data = original.read()
-
-    with open(
-        decompressed_filename,
-        "rb"
-    ) as decompressed:
-
-        decompressed_data = decompressed.read()
-
-    return original_data == decompressed_data
+    with open(original_filename, "rb") as a, open(decompressed_filename, "rb") as b:
+        return a.read() == b.read()
 
 
 # ------------------------------------------------------------
 # Menu
 # ------------------------------------------------------------
+def ask_sizes():
+    global WINDOW_SIZE, LOOKAHEAD_SIZE
+    w = input(f"Search window size [{WINDOW_SIZE}]: ").strip()
+    l = input(f"Look-ahead size   [{LOOKAHEAD_SIZE}]: ").strip()
+    if w:
+        WINDOW_SIZE = max(1, int(w))
+    if l:
+        LOOKAHEAD_SIZE = max(1, int(l))
+
 
 def menu():
-
     while True:
-
         print("\n" + "=" * 50)
         print("             LZ77 DATA COMPRESSION")
         print("=" * 50)
-
-        print("1. Compress file1.txt")
-        print("2. Decompress file2.txt")
+        print("1. Compress   (file1.txt -> file2.txt)")
+        print("2. Decompress (file2.txt -> file3.txt)")
         print("3. Compress then Decompress")
         print("4. Exit")
 
-        choice = input("\nEnter your choice: ")
+        choice = input("\nEnter your choice: ").strip()
 
-        # ----------------------------------------------------
-        # Compression
-        # ----------------------------------------------------
+        try:
+            if choice == "1":
+                ask_sizes()
+                compress_file(INPUT_FILE, COMPRESSED_FILE)
+                print(f"\nCompression completed -> {COMPRESSED_FILE}")
 
-        if choice == "1":
+            elif choice == "2":
+                decompress_file(COMPRESSED_FILE, DECOMPRESSED_FILE)
+                print(f"\nDecompression completed -> {DECOMPRESSED_FILE}")
+                print("Verification:",
+                      "SUCCESS (identical to file1.txt)"
+                      if verify_files(INPUT_FILE, DECOMPRESSED_FILE) else "FAILED")
 
-            try:
+            elif choice == "3":
+                ask_sizes()
+                compress_file(INPUT_FILE, COMPRESSED_FILE)
+                print()
+                decompress_file(COMPRESSED_FILE, DECOMPRESSED_FILE)
+                print("\nVerification:",
+                      "SUCCESS (Original == Decompressed)"
+                      if verify_files(INPUT_FILE, DECOMPRESSED_FILE) else "FAILED")
 
-                compress_file(
-                    INPUT_FILE,
-                    COMPRESSED_FILE
-                )
+            elif choice == "4":
+                print("\nGoodbye!")
+                break
 
-                print("\nCompression completed successfully.")
-                print(f"Input file      : {INPUT_FILE}")
-                print(f"Compressed file : {COMPRESSED_FILE}")
+            else:
+                print("\nInvalid choice. Please choose 1-4.")
 
-            except Exception as e:
+        except FileNotFoundError as e:
+            print("\nFile not found:", e.filename)
+        except Exception as e:
+            print("\nOperation failed. Error:", e)
 
-                print("\nCompression failed.")
-                print("Error:", e)
-
-        # ----------------------------------------------------
-        # Decompression
-        # ----------------------------------------------------
-
-        elif choice == "2":
-
-            try:
-
-                decompress_file(
-                    COMPRESSED_FILE,
-                    DECOMPRESSED_FILE
-                )
-
-                print("\nDecompression completed successfully.")
-                print(f"Compressed file   : {COMPRESSED_FILE}")
-                print(f"Decompressed file : {DECOMPRESSED_FILE}")
-
-                if verify_files(
-                    INPUT_FILE,
-                    DECOMPRESSED_FILE
-                ):
-                    print("\nVerification: SUCCESS")
-                    print("The decompressed file is identical to file1.txt.")
-
-                else:
-                    print("\nVerification: FAILED")
-                    print("The files are not identical.")
-
-            except Exception as e:
-
-                print("\nDecompression failed.")
-                print("Error:", e)
-
-        # ----------------------------------------------------
-        # Compression + Decompression
-        # ----------------------------------------------------
-
-        elif choice == "3":
-
-            try:
-
-                compress_file(
-                    INPUT_FILE,
-                    COMPRESSED_FILE
-                )
-
-                print("\nCompression completed.")
-
-                decompress_file(
-                    COMPRESSED_FILE,
-                    DECOMPRESSED_FILE
-                )
-
-                print("Decompression completed.")
-
-                if verify_files(
-                    INPUT_FILE,
-                    DECOMPRESSED_FILE
-                ):
-                    print("\nVerification: SUCCESS")
-                    print("Original == Decompressed")
-
-                else:
-                    print("\nVerification: FAILED")
-
-            except Exception as e:
-
-                print("\nOperation failed.")
-                print("Error:", e)
-
-        # ----------------------------------------------------
-        # Exit
-        # ----------------------------------------------------
-
-        elif choice == "4":
-
-            print("\nGoodbye!")
-            break
-
-        else:
-
-            print("\nInvalid choice. Please choose 1-4.")
-
-
-# ------------------------------------------------------------
-# Program Entry Point
-# ------------------------------------------------------------
 
 if __name__ == "__main__":
     menu()
