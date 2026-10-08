@@ -249,6 +249,8 @@ def main():
         decompressed_data
     )
 
+    show_statistics(data, tags, position_bits, length_bits)
+
     print("Compression completed.")
     print("Decompression completed.")
     print(f"Number of tags: {len(tags)}")
