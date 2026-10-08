@@ -1,24 +1,17 @@
-def decompress(tags):
+def decode(tuples):
+    output = []
 
-    output = bytearray()
+    for offset, length, next_symbol in tuples:
 
-    for position, length, symbol in tags:
+        # Copy the matched characters
+        if length > 0:
+            start = len(output) - offset
 
-        if position > 0 and length > 0:
-
-            start = len(output) - position
-
-            # Copy ONE byte at a time
-            # This supports overlapping matches
             for i in range(length):
                 output.append(output[start + i])
 
-        if symbol is not None:
-            output.append(symbol)
+        # Add the next symbol
+        if next_symbol is not None:
+            output.append(next_symbol)
 
-    return bytes(output)
-
-def write_decompressed_file(filename, data):
-
-    with open(filename, "wb") as file:
-        file.write(data)
+    return output
