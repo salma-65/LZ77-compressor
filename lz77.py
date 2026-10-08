@@ -197,7 +197,7 @@ def write_decompressed_file(filename, data):
         file.write(data)
 
 #============================================================
-# 10. Show statistics
+# 10 Show statistics
 #===========================================================
 
 def show_statistics(original_data, tags, position_bits, length_bits):
@@ -254,8 +254,6 @@ def main():
     print(f"Number of tags: {len(tags)}")
     print(f"Position bits: {position_bits}")
     print(f"Length bits: {length_bits}")
-
-    show_statistics(data, tags, position_bits, length_bits)
 
     if data == decompressed_data:
         print("Verification: SUCCESS")
