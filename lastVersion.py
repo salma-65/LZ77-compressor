@@ -8,14 +8,16 @@ INPUT_FILE = "file1.txt"
 COMPRESSED_FILE = "file2.txt"
 DECOMPRESSED_FILE = "file3.txt"
 
+
 def file_exists(filename):
     return os.path.isfile(filename)
+
 
 def read_file(filename):
     with open(filename, "r", encoding="utf-8") as file:
         return file.read()
 
-# handle strings or bytes
+
 def write_file(filename, data):
     if isinstance(data, bytes):
         with open(filename, "wb") as file:
@@ -23,60 +25,6 @@ def write_file(filename, data):
     else:
         with open(filename, "w", encoding="utf-8") as file:
             file.write(data)
-
-def write_tags(filename, tags):
-    with open(filename, "w", encoding="utf-8") as file:
-        for tag in tags:
-            file.write(tag + "\n")
-
-def read_tags(filename):
-    with open(filename, "r", encoding="utf-8") as file:
-        tags = file.read().splitlines()
-    return tags
-
-def validate_tags(tags):
-    for tag in tags:
-        if not tag:
-            raise ValueError("Empty tag found")
-        if any(bit not in "01" for bit in tag):
-            raise ValueError("Invalid binary tags.")
-    return True
-
-def save_compressed_file(tags, filename):
-    validate_tags(tags)
-    write_tags(filename, tags)
-
-def load_compressed_file(filename):
-    tags = read_tags(filename)
-    validate_tags(tags)
-    return tags
-
-def compress_file(compress_function, input_filename, output_filename):
-    data = read_file(input_filename)
-
-    tags = compress_function(data)
-
-    save_compressed_file(tags, output_filename)
-
-
-def decompress_file(decompress_function, input_filename, output_filename):
-    tags = load_compressed_file(input_filename)
-
-    data = decompress_function(tags)
-
-    write_file(output_filename, data)
-
-
-# lossless compression checker
-def compare_files(first_filename, second_filename):
-    with open(first_filename, "rb") as first:
-        first_data = first.read()
-
-    with open(second_filename, "rb") as second:
-        second_data = second.read()
-
-    return first_data == second_data
-
 
 # ============================================================
 # 1. LZ77 Settings
@@ -94,10 +42,7 @@ def overlap_match(data, candidate, pos, lookahead_size):
 
     distance = pos - candidate
 
-    limit = min(
-        len(data) - pos,
-        lookahead_size
-    )
+    limit = min(len(data) - pos,lookahead_size)
 
     length = 0
 
@@ -121,10 +66,7 @@ def find_longest_match(data, pos, search_size, lookahead_size):
     best_offset = 0
     best_length = 0
 
-    start = max(
-        0,
-        pos - search_size
-    )
+    start = max(0,pos - search_size)
 
     for i in range(start, pos):
 
@@ -147,7 +89,6 @@ def find_longest_match(data, pos, search_size, lookahead_size):
                 break
 
     return best_offset, best_length
-
 
 # ============================================================
 # 3. Compression
@@ -199,7 +140,6 @@ def compress(data):
         LOOKAHEAD_SIZE
     )
 
-
 # ============================================================
 # 4. Convert number to binary
 # ============================================================
@@ -215,7 +155,6 @@ def to_binary(number, bits):
 def from_binary(binary):
 
     return int(binary, 2)
-
 
 # ============================================================
 # 5. Convert tags to binary
@@ -345,6 +284,9 @@ def write_compressed_file(
             if next_symbol is None:
 
                 symbol_text = "NULL"
+
+            elif next_symbol == "\n":
+                symbol_text = r"\n"
 
             else:
 
@@ -595,56 +537,138 @@ def write_decompressed_file(
         data
     )
 
-
 # ============================================================
 # 12. Show statistics
 # ============================================================
 
 def show_statistics(
     original_data,
+    decompressed_data,
     tuples,
     position_bits,
     length_bits
 ):
 
-    # Original size in bits
+    # --------------------------------------------------------
+    # Calculate sizes
+    # --------------------------------------------------------
 
-    original_size = len(
-        original_data
-    ) * 8
+    original_size = len(original_data) * 8
+    decompressed_size = len(decompressed_data) * 8
 
-    # Each tag contains:
-    # Position + Length + Symbol
+    tag_size = position_bits + length_bits + 8
+    compressed_size = len(tuples) * tag_size
 
-    tag_size = (
-        position_bits
-        + length_bits
-        + 8
-    )
+    # --------------------------------------------------------
+    # Display header
+    # --------------------------------------------------------
 
-    # Total compressed size
+    print("\n" + "=" * 60)
+    print(" " * 17 + "LZ77 COMPRESSION")
+    print("=" * 60)
 
-    compressed_size = (
-        len(tuples)
-        * tag_size
-    )
+    # --------------------------------------------------------
+    # Original data
+    # --------------------------------------------------------
 
-    print(
-        "\n========== Compression Statistics =========="
-    )
+    print("\n[ 1. ORIGINAL DATA ]")
+    print("-" * 60)
 
-    print(
-        f"Original size   : {original_size} bits"
-    )
+    lines = original_data.splitlines()
 
-    print(
-        f"Compressed size : {compressed_size} bits"
-    )
+    label = "Original Text"
+    prefix = f"{label.ljust(12)}: "
 
-    print(
-        f"Tag size        : {tag_size} bits"
-    )
+    for i, line in enumerate(lines):
+        if i == 0:
+            print(prefix + line)
+        else:
+            print(" " * len(prefix) + line)
 
+    print(f"Original Size: {original_size} bits")
+
+    # --------------------------------------------------------
+    # Compression results
+    # --------------------------------------------------------
+
+    print("\n[ 2. COMPRESSION RESULTS ]")
+    print("-" * 60)
+
+    print(f"Compression Status : COMPLETED")
+    print(f"Number of Tags     : {len(tuples)}")
+    print(f"Position Bits      : {position_bits}")
+    print(f"Length Bits        : {length_bits}")
+    print(f"Tag Size           : {tag_size} bits")
+    print(f"Compressed Size    : {compressed_size} bits")
+
+    # --------------------------------------------------------
+    # Decompression results
+    # --------------------------------------------------------
+
+    print("\n[ 3. DECOMPRESSION RESULTS ]")
+    print("-" * 60)
+
+    print(f"Decompression Status : COMPLETED")
+    
+    lines = decompressed_data.splitlines()
+
+    label = "Decompressed Text"
+    prefix = f"{label.ljust(21)}: "
+
+    for i, line in enumerate(lines):
+        if i == 0:
+            print(prefix + line)
+        else:
+            print(" " * len(prefix) + line)
+
+    print(f"Decompressed Size    : {decompressed_size} bits")
+
+
+    # --------------------------------------------------------
+    # Overlapping results
+    # --------------------------------------------------------
+
+    overlap_tags = []
+
+    for index, (offset, length, next_symbol) in enumerate(tuples):
+        if offset > 0 and length > offset:
+            overlap_tags.append(
+                (index + 1, offset, length, next_symbol)
+            )
+
+    print("\n[ 4. Handling overlap sequence ]")
+    print("-" * 60)
+
+    if overlap_tags:
+        print("Status: HANDLED")
+        print(f"Number of tags: {len(overlap_tags)}")
+
+        for tag_number, offset, length, next_symbol in overlap_tags:
+            symbol_text = (
+                "NULL"
+                if next_symbol is None
+                else repr(next_symbol)
+            )
+
+            print(f"Tag: <{offset}, {length}, {symbol_text}>")
+
+    else:
+        print("Status : NOT NEEDED")
+
+
+    # --------------------------------------------------------
+    # Verification
+    # --------------------------------------------------------
+
+    print("\n[ 5. VERIFICATION ]")
+    print("-" * 60)
+
+    if original_data == decompressed_data:
+        print("Status  : SUCCESS")
+        print("Message : Original data matches decompressed data.")
+    else:
+        print("Status  : FAILED")
+        print("Message : Original data does not match decompressed data.")
 
 # ============================================================
 # 13. Main
@@ -750,56 +774,16 @@ def main():
     )
 
     # --------------------------------------------------------
-    # Statistics
+    # Show all results
     # --------------------------------------------------------
 
     show_statistics(
         data,
+        decompressed_data,
         tuples,
         position_bits,
         length_bits
     )
-
-    # --------------------------------------------------------
-    # Results
-    # --------------------------------------------------------
-
-    print(
-        "Compression completed."
-    )
-
-    print(
-        "Decompression completed."
-    )
-
-    print(
-        f"Number of tags: {len(tuples)}"
-    )
-
-    print(
-        f"Position bits: {position_bits}"
-    )
-
-    print(
-        f"Length bits: {length_bits}"
-    )
-
-    # --------------------------------------------------------
-    # Verification
-    # --------------------------------------------------------
-
-    if data == decompressed_data:
-
-        print(
-            "Verification: SUCCESS"
-        )
-
-    else:
-
-        print(
-            "Verification: FAILED"
-        )
-
 
 # ============================================================
 # Run program
